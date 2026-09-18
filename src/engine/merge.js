@@ -1,69 +1,74 @@
-// Static geometry batching — the draw-call killer. Bakes each mesh's world transform (and
-// optionally its material colour into a vertex-colour attribute) so a whole model, or a whole
-// level's worth of one material, becomes a single draw call.
+// Static-geometry batching. Every separate mesh is a separate draw call, so objects that never
+// move independently are baked into as few meshes as possible.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-function normalize(geom, color) {
-  const g = geom.index ? geom : geom.toNonIndexed();
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', g.getAttribute('position'));
-  if (g.getAttribute('normal')) out.setAttribute('normal', g.getAttribute('normal'));
-  else out.computeVertexNormals();
-  if (g.getAttribute('uv')) out.setAttribute('uv', g.getAttribute('uv'));
-  else out.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
-  if (g.index) out.setIndex(g.index);
-  if (color) {
-    const n = out.getAttribute('position').count;
-    const arr = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { arr[i * 3] = color.r; arr[i * 3 + 1] = color.g; arr[i * 3 + 2] = color.b; }
-    out.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+const _m = new THREE.Matrix4();
+
+/** Geometry of `mesh`, transformed into `root`'s space, reduced to position/normal/uv. */
+function bakedGeometry(mesh, root) {
+  mesh.updateWorldMatrix(true, false);
+  root.updateWorldMatrix(true, false);
+  _m.copy(root.matrixWorld).invert().multiply(mesh.matrixWorld);
+  let g = mesh.geometry.clone();
+  if (!g.index) g = g.toNonIndexed().clone();          // keep everything the same kind
+  for (const name of Object.keys(g.attributes)) {
+    if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+  }
+  if (!g.attributes.uv) {
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+  }
+  if (!g.index) {
+    const idx = new Uint32Array(g.attributes.position.count).map((_, i) => i);
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+  }
+  g.applyMatrix4(_m);
+  return g;
+}
+
+/**
+ * Replace the given meshes (all children of `root`) with one mesh per material.
+ * Returns the new meshes, already added to `root`.
+ */
+export function mergeByMaterial(root, meshes, { castShadow = true, receiveShadow = true } = {}) {
+  const byMat = new Map();
+  for (const m of meshes) {
+    if (!byMat.has(m.material)) byMat.set(m.material, []);
+    byMat.get(m.material).push(bakedGeometry(m, root));
+    m.parent?.remove(m);
+  }
+  const out = [];
+  for (const [mat, geos] of byMat) {
+    const merged = new THREE.Mesh(mergeGeometries(geos, false), mat);
+    merged.castShadow = castShadow;
+    merged.receiveShadow = receiveShadow;
+    merged.matrixAutoUpdate = false;
+    root.add(merged);
+    out.push(merged);
+    for (const g of geos) g.dispose();
   }
   return out;
 }
 
-function bake(mesh, useVertexColors) {
-  mesh.updateMatrixWorld(true);
-  const geom = mesh.geometry.clone();
-  geom.applyMatrix4(mesh.matrixWorld);
-  const color = useVertexColors ? (mesh.material.color || new THREE.Color(1, 1, 1)) : null;
-  return normalize(geom, color);
-}
-
 /**
- * Groups meshes by their material's `.name` (or the material object identity when unnamed),
- * bakes world transforms, and returns one merged mesh per group.
- */
-export function mergeByMaterial(root, meshes, opts = {}) {
-  const groups = new Map();
-  for (const mesh of meshes) {
-    const mat = mesh.material;
-    const key = mat.name || mat.uuid;
-    if (!groups.has(key)) groups.set(key, { mat, geoms: [] });
-    groups.get(key).geoms.push(bake(mesh, false));
-  }
-  const results = [];
-  for (const { mat, geoms } of groups.values()) {
-    const merged = mergeGeometries(geoms, false);
-    const out = new THREE.Mesh(merged, mat);
-    out.castShadow = opts.castShadow ?? true;
-    out.receiveShadow = opts.receiveShadow ?? true;
-    root.add(out);
-    results.push(out);
-  }
-  return results;
-}
-
-/**
- * Bakes each mesh's material colour into a vertex-colour attribute, then merges everything into
- * ONE mesh using a single shared material — a whole model (soldier, gun) in one draw call.
+ * Bake coloured parts into ONE mesh using vertex colours (one draw call for a whole model).
+ * Each part's material colour becomes its vertex colour.
  */
 export function mergeWithColors(root, meshes, material) {
-  const geoms = meshes.map((m) => bake(m, true));
-  const merged = mergeGeometries(geoms, false);
-  const out = new THREE.Mesh(merged, material);
-  out.castShadow = true;
-  out.receiveShadow = true;
-  if (root) root.add(out);
-  return out;
+  const geos = [];
+  const col = new THREE.Color();
+  for (const m of meshes) {
+    const g = bakedGeometry(m, root);
+    col.copy(m.material.color);
+    const n = g.attributes.position.count;
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { c[i * 3] = col.r; c[i * 3 + 1] = col.g; c[i * 3 + 2] = col.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    geos.push(g);
+    m.parent?.remove(m);
+  }
+  const mesh = new THREE.Mesh(mergeGeometries(geos, false), material);
+  for (const g of geos) g.dispose();
+  root.add(mesh);
+  return mesh;
 }
