@@ -1,102 +1,152 @@
-# COD_replica
+# BLACKOUT ARENA — AIMBOT nerf-gun edition
 
-**BLACKOUT ARENA** — an original first-person arena shooter in the Call of Duty style, built to
-run entirely offline from a folder and driven by a custom "AIMBOT" nerf-gun controller (a
-Raspberry Pi Pico acting as a USB mouse + keyboard over gyro, joystick, and five buttons).
+A first-person arena shooter in the Call of Duty mould, built to be played with the **AIMBOT
+nerf gun**: Raspberry Pi Pico, MPU-6500 aiming, joystick movement, a potentiometer
+sensitivity dial, and Trigger / Clutch / Reload / Prime / Aux buttons.
 
-It is not a copy of any existing game's maps, weapons, audio, or art — those are original and
-generated at runtime. What's reproduced is the *feel*: time-to-kill, ADS, recoil, movement,
-grenades, and killstreaks.
+It has ADS, sprint/slide/crouch, recoil and spread bloom, headshots, **frag grenades**
+(cook, throw, bounce), **killstreaks** (UAV, airstrike, resupply), bots that flank and throw
+grenades, a killfeed, and a rotating minimap. It runs in the browser on WebGL2, so the same
+folder works on Windows, macOS and Linux with nothing to compile.
 
-## Quick start
+**Gun setup, firmware and wiring notes: [`hardware/README.md`](hardware/README.md).**
 
-Requires only Python 3.7+ (no build step, no npm, no bundler — three.js is vendored in the
-repo). The game must be served over `http://`, not opened as a `file://` path — ES modules and
-pointer lock both need a real origin.
+**Rebuilding this game from scratch: [`BUILD_PROMPT.md`](BUILD_PROMPT.md)** — the complete
+specification (hardware, firmware, every file, every constant, the bugs found, and the tests).
+
+---
+
+## Run it
 
 ```bash
 python serve.py
 ```
 
-or double-click `run.sh` (macOS/Linux) / `run.bat` (Windows). Then open
-`http://localhost:8080/` if it doesn't open automatically. Chrome, Edge, or Brave are
-recommended (for `unadjustedMovement` mouse input and WebSerial gun telemetry).
+Or double-click `run.bat` (Windows) / `./run.sh` (macOS, Linux). Either one starts a local
+server and opens `http://localhost:8080/`.
 
-## Playing with a mouse and keyboard
+**It must be served over http, not opened as a `file://` path** — ES modules and pointer lock
+both require an origin. Any static server works (`npx serve`, `php -S`, VS Code Live Server…).
 
-The game plays fully with a normal mouse and keyboard — the AIMBOT gun is optional. Defaults:
+Use **Chrome or Edge** for the best result: they support `unadjustedMovement` on pointer lock,
+which bypasses the OS mouse acceleration curve. Firefox and Safari run the game fine but apply
+the OS curve to your motion input.
 
-| Action | Key |
+Click **DEPLOY**, and the game captures your pointer. `Esc` pauses and releases it.
+
+---
+
+## Controls
+
+| Gun | Action |
 |---|---|
-| Move | `W A S D` (+ arrow keys) |
-| Aim | Mouse |
-| Fire | Left click |
-| Aim down sights | Right click |
-| Jump | `Space` |
-| Crouch / slide | `C` (or Left Ctrl) |
-| Sprint | Left Shift |
-| Reload (hold = swap weapon) | `R` |
-| Grenade (hold = cook) | `G` |
-| Clutch (re-level view / freeze aim) | `F` |
-| Call in killstreak | `3` |
-| Next weapon | `Q` |
+| Trigger | Fire (aims while held; sniper: squeeze = scope, release = fire) |
+| Clutch | Pause aim / re-level view (hold 3 s still = gyro recalibration) |
+| Reload | Tap = reload · hold = switch weapon |
+| Prime | Grenade — hold to cook, release to throw |
+| Aux | Call in killstreak |
+| Stick click | Tap = jump · hold = crouch (slide while sprinting) |
+| Joystick | Move · full forward = sprint |
+| MPU-6500 | Aim |
+| Potentiometer | Sensitivity dial |
 
-Every action is rebindable from **Settings → Controls** — click a slot, then press the new key
-or mouse button. `Escape` is reserved for pause and can't be rebound.
+Every button can be remapped in **Settings → Controls**. On a keyboard the defaults are the
+same keys the gun sends: `W A S D`, `Shift`, `Space`, `C`, `R`, `G`, `3`, `F`, plus left/right
+mouse. `Esc` pauses.
 
-## Playing with the AIMBOT gun
-
-See `hardware/README.md` for the full build guide: parts list, wiring diagram, and firmware
-flashing instructions. In short: the gun enumerates as a USB mouse + keyboard, so it needs no
-driver. Plug it in, and it drives the game exactly like a mouse and keyboard would.
-
-Use **Gun Check** (main menu) to verify every input end-to-end before playing — it lights up as
-each button, the stick, the gyro, and the sensitivity dial are exercised, and (with the gun's
-serial port connected) shows a raw GPIO pin light next to each button so a wiring problem and a
-binding problem are never confused.
-
-Use **Aim Tuning** to watch the raw vs. filtered gyro trace live and tune sensitivity, the
-One-Euro filter's `minCutoff`/`beta`, deadzone, and drift compensation.
+---
 
 ## Modes
 
-- **Deathmatch** — score-limited or time-limited free-for-all against AI bots.
-- **Firing Range** — no bots, no self-damage, stationary practice targets and a free killstreak
-  every few seconds. Good for tuning aim and testing grenades.
-- **Tracking Test** — a 30-second drill that scores how steadily you track a moving point;
-  useful for comparing gun sensitivity settings.
+- **Deploy** — team deathmatch against bots. Score limit, match length, hostile count and
+  difficulty are all in Settings → Gameplay.
+- **Firing Range** — pop-up plates, a moving target, a live accuracy readout, unlimited grenades
+  and a free practice airstrike on Aux.
+- **Gun Check** — a live tile per gun component (and raw pins / gyro / pot over USB serial),
+  ticked off as each one works.
+- **Aim Tuning** — drift test, jitter readout, raw-vs-filtered trace, and a scored 30-second
+  tracking test.
 
-## Settings
+---
 
-- **Controls** — ADS mode (squeeze/hold/toggle), reload-hold-to-swap, grenade cook, clutch
-  behaviour, crouch mode.
-- **Aim-Motion** — sensitivity, per-context sensitivity scales (ADS/scope), invert Y, the motion
-  filter and its parameters, aim assist.
-- **Video** — quality preset (Performance/Balanced/Quality), dynamic resolution, FOV, shadows,
-  bloom, view bob, FPS counter.
-- **Gameplay** — bot difficulty and count, score/time limits, auto-reload, hit sound, volume.
+## How the gun talks to the game
 
-Settings are stored in your browser's `localStorage`, so they persist between sessions on the
-same machine.
+The gun's Pico is a USB mouse + keyboard, so the browser gets ordinary input with no setup.
+**Motion Mode** (on by default) runs the mouse movement through a pipeline built for a gyro:
+spike rejection → noise deadzone → One-Euro adaptive filter → drift-bias cancellation → aim
+magnetism and target slowdown. Every button press is latched, so a tap shorter than one frame
+still counts.
+
+An optional USB-serial link carries raw telemetry (pins, gyro, joystick, potentiometer) for the
+Gun Check. It is diagnostics only and never moves the aim, so input is never counted twice.
+
+---
 
 ## Performance
 
-The renderer targets a stable high frame rate on modest hardware: all static level geometry is
-merged into a handful of draw calls, shadows are baked once (the level never moves), there's
-exactly one dynamic light, and every particle/tracer/decal system is pooled — nothing is
-allocated mid-fight. Dynamic resolution trims render scale under sustained load and restores it
-once the frame is comfortably inside budget again. If it's still not smooth, drop the quality
-preset to **Performance**.
+**Settings → Video → Quality Preset:**
 
-## Troubleshooting
+| Preset | Lighting | Resolution | Shadows | Antialiasing | Bloom | Use it when |
+|---|---|---|---|---|---|---|
+| **PERFORMANCE** | simple | native, capped at 1× | off | off* | off | Maximum FPS, laptops, integrated GPUs |
+| **BALANCED** (default) | simple | up to 1.25× | baked | on | off | Most PCs |
+| **QUALITY** | full PBR | up to 2× | baked, sharper | on | optional | Strong dedicated GPU |
 
-- **Stuck on "Loading arena…"** — make sure you're running `python serve.py` and not opening
-  `index.html` directly; check the browser console for the real error.
-- **Gun connects but nothing happens in-game** — open Gun Check; if the PIN light comes on but
-  the key tile doesn't pass, the wiring is fine and the firmware's key mapping (or your in-game
-  binding) doesn't match — see `hardware/README.md`.
-- **Everything is black** — your GPU/browser may not support WebGL2; try Chrome/Edge, or update
-  graphics drivers.
-- **In Brave**, turn Shields off for `localhost` if the page stalls.
+\* Antialiasing is fixed when the page loads, so switching to or from PERFORMANCE fully applies
+after a reload.
 
-See `BUILD_PROMPT.md` for the full technical specification this game was built from.
+**Auto Resolution** (on by default) learns your monitor's refresh rate (60 / 144 / 240 Hz). When
+frames start falling behind it, it trims the render resolution in 5 % steps, never below 70 %.
+It restores full resolution a few seconds after the load drops. While it's active, the FPS
+counter shows `RES xx%`. **Render Scale** sets a fixed cap on top of that.
+
+What keeps it fast (v2.1):
+- **~45 draw calls per frame instead of ~440.** The level is baked into about a dozen meshes, each
+  soldier is one mesh, and each gun is one mesh.
+- **Simple lighting for the level** on PERFORMANCE and BALANCED: Lambert instead of physically
+  based materials, roughly half the per-pixel cost.
+- **One dynamic light instead of 17.** Muzzle flashes and explosions share it, and the lamps are
+  emissive only. The light count never changes, so shaders never recompile mid-match.
+- **Shadows rendered once at load** instead of every frame. Bots use a cheap contact shadow.
+- **Bullets, line of sight and blast checks** test ray against collision box, not the render
+  meshes.
+- **Everything pooled:** tracers, sparks, decals (one instanced mesh), explosions, smoke,
+  grenades. Nothing is created during combat.
+- **All shaders are compiled while loading,** so the first shot or explosion doesn't stutter.
+- **The HUD only touches the page when a value changes,** and the minimap redraws at 20 Hz.
+
+---
+
+## Layout
+
+```
+index.html            shell + HUD markup
+css/style.css         HUD and menu styling
+src/main.js           renderer, post-processing, match logic, menus, calibration
+src/settings.js       persisted settings + the schema that builds the options UI
+src/engine/input.js   rebindable actions, press latching, One-Euro gyro filter, WebSerial telemetry
+src/engine/controls.js the gun's action map and what the firmware sends
+src/engine/physics.js swept AABB collision with step-up
+src/engine/audio.js   procedural WebAudio weapon and impact sound
+src/game/map.js       arena geometry, colliders, procedural textures
+src/game/player.js    movement, stance, camera, health
+src/game/weapons.js   weapon table, viewmodel, recoil and spread
+src/game/bots.js      hostile AI: navigation, line of sight, burst fire, hit zones
+src/game/grenades.js  frag cooking, throwing, bounce physics, arc preview
+src/game/effects.js   tracers, impacts, decals, blood, explosions, smoke
+src/game/hud.js       HUD, killfeed, damage indicators, minimap
+vendor/three/         three.js r160 (vendored, so the game runs fully offline)
+hardware/             AIMBOT_master_v5 firmware (.ino + ready .uf2) and gun guide
+```
+
+No build step, no package manager, no network access at runtime.
+
+---
+
+## A note on the brief
+
+This is an original game built in the Call of Duty *style*. It is not, and could not be, a copy
+of Call of Duty itself — that is roughly a thousand people working for three years on a
+proprietary engine, and its maps, weapons, audio and art are protected work. What is here is the
+part that actually matters for your demonstration: the feel — time-to-kill, ADS behaviour,
+recoil, movement, and the moment-to-moment loop — driven end-to-end by your own hardware.
