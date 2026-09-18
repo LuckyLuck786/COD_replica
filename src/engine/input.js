@@ -137,7 +137,9 @@ export class Input {
     }
   }
   _onLockChange() { this.locked = document.pointerLockElement === this.el; }
-  _onLockErrorInternal(e) { this.onLockError && this.onLockError(e); }
+  // Native 'pointerlockerror' fires for the same failures the requestLock() promise chain
+  // already reports — handled there so onLockError isn't invoked twice per failed attempt.
+  _onLockErrorInternal() {}
 
   // ---------------------------------------------------------------- rebinding
   captureNext(cb) { this._captureCb = cb; }

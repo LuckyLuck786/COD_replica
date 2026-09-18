@@ -98,7 +98,7 @@ world.root.add(fx.root);
 
 const player = new Player(world.colliders);
 const loadout = new Loadout(vmCamera, vmScene);
-const grenades = new Grenades(world.colliders, (pos) => explode(pos));
+const grenades = new Grenades(world.colliders, (pos, g) => explode(pos, g));
 world.root.add(grenades.root);
 
 const bots = new BotManager(world.colliders, world.waypoints);
