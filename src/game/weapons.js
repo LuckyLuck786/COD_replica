@@ -1,236 +1,309 @@
-// Weapon table, viewmodel construction, and the Loadout that drives ADS blend, recoil,
-// sway/bob, muzzle flash, and grenade-lowering.
+// Weapon definitions, the first-person viewmodel, and the fire/reload/recoil state machine.
 import * as THREE from 'three';
 import { mergeWithColors } from '../engine/merge.js';
-import { audio } from '../engine/audio.js';
 
-export const WEAPONS = {
-  R91: {
-    id: 'R91', name: 'R-91 RANGER', type: 'auto', profile: 'rifle', sight: 'holo',
-    rpm: 690, dmg: 31, headMult: 2.4, limbMult: 0.85, mag: 30, reserve: 180,
-    reload: 2.05, ads: 0.22, range: 46, falloff: 0.55,
-    spread: { hip: 0.028, ads: 0.004, move: 0.02, air: 0.05, max: 0.12, bloom: 0.012, decay: 6 },
-    recoil: { v: 0.9, h: 0.35, recover: 7, kick: 0.03 },
-    sightY: 0.052,
-  },
-  V9: {
-    id: 'V9', name: 'VECTOR-9', type: 'auto', profile: 'smg', sight: 'reflex',
-    rpm: 940, dmg: 23, headMult: 2.0, limbMult: 0.8, mag: 32, reserve: 224,
-    reload: 1.72, ads: 0.17, range: 26, falloff: 0.8,
-    spread: { hip: 0.034, ads: 0.006, move: 0.024, air: 0.06, max: 0.14, bloom: 0.010, decay: 7 },
-    recoil: { v: 0.7, h: 0.5, recover: 8, kick: 0.025 },
-    sightY: 0.048,
-  },
-  M7: {
-    id: 'M7', name: 'M7 LONGSHOT', type: 'bolt', profile: 'sniper', sight: 'scope',
-    rpm: 48, dmg: 118, headMult: 2.0, limbMult: 1.0, mag: 5, reserve: 35,
-    reload: 2.9, ads: 0.42, range: 120, falloff: 0.15,
-    spread: { hip: 0.085, ads: 0.0, move: 0.03, air: 0.08, max: 0.16, bloom: 0.02, decay: 4 },
-    recoil: { v: 2.4, h: 0.4, recover: 3.5, kick: 0.09 },
-    sightY: 0.06,
-  },
-  P8: {
-    id: 'P8', name: 'P8 SIDEARM', type: 'semi', profile: 'pistol', sight: 'iron',
-    rpm: 420, dmg: 27, headMult: 2.2, limbMult: 0.8, mag: 12, reserve: 72,
-    reload: 1.42, ads: 0.15, range: 24, falloff: 0.9,
-    spread: { hip: 0.026, ads: 0.005, move: 0.018, air: 0.045, max: 0.1, bloom: 0.01, decay: 8 },
-    recoil: { v: 0.6, h: 0.3, recover: 9, kick: 0.02 },
-    sightY: 0.045,
-  },
-};
+const GUN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.35 });
 
-export const WEAPON_ORDER = ['R91', 'V9', 'M7', 'P8'];
+export const WEAPONS = [
+  {
+    id: 'ar', name: 'R-91 RANGER', kind: 'rifle', auto: true,
+    rpm: 690, damage: 31, headMult: 2.4, limbMult: 0.85,
+    mag: 30, reserve: 180, reload: 2.05, adsTime: 0.22,
+    range: 46, falloff: 0.55, penetration: 0,
+    spread: { hip: 0.028, ads: 0.0035, move: 0.030, air: 0.055, max: 0.075, bloom: 0.0055, decay: 0.10 },
+    recoil: { v: 0.0072, h: 0.0030, recover: 7.0, kick: 0.030 },
+    colors: { body: 0x4c5358, rail: 0x3a4145, grip: 0x2c3134, accent: 0x8a9298 },
+    size: { len: 0.62, sight: 'holo', sightY: 0.090 },
+  },
+  {
+    id: 'smg', name: 'VECTOR-9', kind: 'smg', auto: true,
+    rpm: 940, damage: 23, headMult: 2.0, limbMult: 0.9,
+    mag: 32, reserve: 224, reload: 1.72, adsTime: 0.17,
+    range: 26, falloff: 0.62, penetration: 0,
+    spread: { hip: 0.034, ads: 0.0062, move: 0.020, air: 0.048, max: 0.090, bloom: 0.0060, decay: 0.13 },
+    recoil: { v: 0.0055, h: 0.0038, recover: 8.5, kick: 0.024 },
+    colors: { body: 0x515759, rail: 0x373c3f, grip: 0x2a2e30, accent: 0xa9702f },
+    size: { len: 0.46, sight: 'reflex', sightY: 0.090 },
+  },
+  {
+    id: 'sniper', name: 'M7 LONGSHOT', kind: 'sniper', auto: false, bolt: true,
+    rpm: 48, damage: 118, headMult: 2.0, limbMult: 0.72,
+    mag: 5, reserve: 35, reload: 2.9, adsTime: 0.42,
+    range: 120, falloff: 0.9, penetration: 1,
+    spread: { hip: 0.085, ads: 0.0, move: 0.045, air: 0.10, max: 0.12, bloom: 0.010, decay: 0.30 },
+    recoil: { v: 0.030, h: 0.006, recover: 3.4, kick: 0.11 },
+    colors: { body: 0x585a4e, rail: 0x3b3d36, grip: 0x2b2d28, accent: 0x7d876c },
+    size: { len: 0.86, sight: 'scope', sightY: 0.098 },
+  },
+  {
+    id: 'pistol', name: 'P8 SIDEARM', kind: 'pistol', auto: false,
+    rpm: 420, damage: 27, headMult: 2.2, limbMult: 0.85,
+    mag: 12, reserve: 72, reload: 1.42, adsTime: 0.15,
+    range: 24, falloff: 0.55, penetration: 0,
+    spread: { hip: 0.026, ads: 0.0030, move: 0.022, air: 0.05, max: 0.06, bloom: 0.0075, decay: 0.16 },
+    recoil: { v: 0.0090, h: 0.0035, recover: 9.0, kick: 0.038 },
+    colors: { body: 0x484d50, rail: 0x363a3d, grip: 0x272a2c, accent: 0x969ba0 },
+    size: { len: 0.28, sight: 'iron', sightY: 0.058 },
+  },
+];
 
-function box(w, h, d, mat) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-  return m;
+// ---------------------------------------------------------------- viewmodel
+function mat(c, rough = 0.5, metal = 0.7) {
+  return new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: metal });
 }
 
-/** Builds a viewmodel from boxes (receiver, barrel, rail, grip, mag, stock, foregrip, handle) + sight, merged into one mesh. */
-export function buildViewmodel(weapon) {
-  const matBody = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.5, metalness: 0.6 });
-  const matSight = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.7 });
-  const group = new THREE.Group();
+function buildViewmodel(def) {
+  const g = new THREE.Group();
+  const C = def.colors;
+  const body = mat(C.body, .52, .35), rail = mat(C.rail, .62, .28),
+        grip = mat(C.grip, .88, .08), acc = mat(C.accent, .55, .32);
+  const L = def.size.len;
   const parts = [];
+  const add = (w, h, d, x, y, z, m) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z); g.add(b); parts.push(b); return b;
+  };
 
-  const receiver = box(0.06, 0.08, 0.32, matBody); receiver.position.set(0, 0, 0); parts.push(receiver);
-  const barrel = box(0.03, 0.03, weapon.profile === 'sniper' ? 0.42 : 0.26, matBody);
-  barrel.position.set(0, 0.01, -0.32); parts.push(barrel);
-  const rail = box(0.04, 0.02, 0.2, matSight); rail.position.set(0, 0.06, -0.05); parts.push(rail);
-  const grip = box(0.035, 0.14, 0.05, matBody); grip.position.set(0, -0.09, 0.08); grip.rotation.x = 0.25; parts.push(grip);
-  const mag = box(0.04, weapon.profile === 'sniper' ? 0.08 : 0.16, 0.06, matBody);
-  mag.position.set(0, -0.13, -0.02); mag.rotation.x = -0.15; parts.push(mag);
-  const stock = box(0.05, 0.07, weapon.profile === 'pistol' ? 0.02 : 0.2, matBody);
-  stock.position.set(0, 0, weapon.profile === 'pistol' ? 0.05 : 0.24); parts.push(stock);
-  const foregrip = box(0.03, 0.1, 0.04, matBody);
-  foregrip.position.set(0, -0.07, -0.22); parts.push(foregrip);
-  const handle = box(0.02, 0.03, 0.05, matSight);
-  handle.position.set(0.04, 0.03, -0.02); parts.push(handle);
+  add(0.075, 0.085, L, 0, 0, -L / 2, body);                    // receiver
+  add(0.045, 0.045, L * 0.75, 0, 0.005, -L - L * 0.30, rail);  // barrel
+  add(0.06, 0.02, L * 0.55, 0, 0.052, -L * 0.55, rail);        // top rail
+  add(0.055, 0.13, 0.075, 0, -0.10, -L * 0.25, grip)           // pistol grip
+    .rotation.set(0.28, 0, 0);
+  if (def.kind !== 'pistol') {
+    add(0.05, 0.11, 0.10, 0, -0.085, -L * 0.62, acc);          // magazine
+    add(0.065, 0.07, 0.15, 0, -0.005, 0.075, body);            // stock
+    add(0.045, 0.05, 0.09, 0, -0.045, -L * 1.05, grip);        // foregrip
+  } else {
+    add(0.045, 0.10, 0.055, 0, -0.075, -L * 0.30, acc);
+  }
+  add(0.02, 0.02, 0.12, 0.048, -0.015, -L * 0.35, rail);       // charging handle
 
-  const sight = box(0.05, 0.05, 0.06, matSight);
-  sight.position.set(0, 0.065 + weapon.sightY, -0.05);
-  parts.push(sight);
+  // sights
+  const sightY = 0.078;
+  if (def.size.sight === 'scope') {
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.30, 14), rail);
+    tube.rotation.x = Math.PI / 2; tube.position.set(0, sightY + 0.02, -L * 0.55);
+    g.add(tube); parts.push(tube);
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.032, 16),
+      new THREE.MeshStandardMaterial({ color: 0x0a2f3a, emissive: 0x123b48, emissiveIntensity: .8, roughness: .1, metalness: .9 }));
+    lens.position.set(0, sightY + 0.02, -L * 0.40); lens.rotation.y = Math.PI;
+    g.add(lens);
+  } else if (def.size.sight === 'iron') {
+    add(0.008, 0.026, 0.01, 0, sightY - 0.02, -L * 0.95, rail);
+    add(0.030, 0.022, 0.01, 0, sightY - 0.022, -L * 0.06, rail);
+  } else {
+    add(0.058, 0.052, 0.062, 0, sightY + 0.012, -L * 0.52, rail);
+    const dot = new THREE.Mesh(new THREE.CircleGeometry(0.02, 12),
+      new THREE.MeshStandardMaterial({ color: 0x0d1a12, emissive: 0x2fff77, emissiveIntensity: .55, roughness: .2 }));
+    dot.position.set(0, sightY + 0.012, -L * 0.55 + 0.031); dot.rotation.y = Math.PI;
+    g.add(dot);
+  }
 
-  for (const p of parts) group.add(p);
-  group.updateMatrixWorld(true);
-  const merged = mergeWithColors(null, parts, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.5 }));
-  merged.name = 'viewmodel-' + weapon.id;
-  return merged;
+  // muzzle flash
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xffe0a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), flashMat);
+  flash.position.set(0, 0.005, -L * 1.72);
+  flash.scale.set(1, 1, 2.1);
+  g.add(flash);
+
+  const muzzle = new THREE.Object3D();
+  muzzle.position.copy(flash.position);
+  g.add(muzzle);
+
+  // the whole gun body becomes one draw call
+  g.updateMatrixWorld(true);
+  mergeWithColors(g, parts, GUN_MAT);
+  for (const p of parts) p.geometry.dispose();
+  return { group: g, flash, muzzle };
+}
+
+// ---------------------------------------------------------------- runtime
+export class WeaponState {
+  constructor(def) {
+    this.def = def;
+    this.ammo = def.mag;
+    this.reserve = def.reserve;
+    this.reloading = false;
+    this.reloadEnd = 0;
+    this.nextShot = 0;
+    this.boltUntil = 0;
+    this.spread = def.spread.hip;
+    const vm = buildViewmodel(def);
+    this.group = vm.group; this.flashMesh = vm.flash; this.muzzle = vm.muzzle;
+    this.group.visible = false;
+  }
+  get full() { return this.ammo >= this.def.mag; }
 }
 
 export class Loadout {
-  constructor(camera, vmScene) {
-    this.camera = camera;
-    this.vmScene = vmScene;
-    this.weaponId = WEAPON_ORDER[0];
-    this.holderScale = 0.74;
-    this.ammo = {};
-    this.reserve = {};
-    for (const id of WEAPON_ORDER) { this.ammo[id] = WEAPONS[id].mag; this.reserve[id] = WEAPONS[id].reserve; }
-    this.viewmodels = {};
-    for (const id of WEAPON_ORDER) {
-      const vm = buildViewmodel(WEAPONS[id]);
-      vm.visible = false;
-      this.vmScene.add(vm);
-      this.viewmodels[id] = vm;
-    }
-    this.reset();
-  }
+  constructor(camera) {
+    this.slots = WEAPONS.map(d => new WeaponState(d));
+    this.index = 0;
+    this.prevIndex = 1;
+    this.holder = new THREE.Group();
+    this.holder.scale.setScalar(0.74);
+    // slight down/right offset — classic hip position
+    this.holder.position.set(0.185, -0.185, -0.42);
+    camera.add(this.holder);
+    for (const s of this.slots) this.holder.add(s.group);
+    this.slots[0].group.visible = true;
 
-  get weapon() { return WEAPONS[this.weaponId]; }
-  get currentAmmo() { return this.ammo[this.weaponId]; }
-  get currentReserve() { return this.reserve[this.weaponId]; }
-
-  reset() {
-    // Clears EVERY timer. A restart that leaves nextShot/boltUntil/swapUntil at old absolute
-    // times makes the gun silently refuse to fire after G.time resets to 0 (Bug 3).
-    this.nextShot = 0;
-    this.boltUntil = 0;
+    this.ads = 0;               // 0..1
+    this.lower = 0;             // 0..1, gun dropped out of view while a grenade is in hand
     this.swapUntil = 0;
-    this.reloading = false;
-    this.reloadEndsAt = 0;
-    this.adsBlend = 0;
-    this.spread = this.weapon ? this.weapon.spread.hip : 0.03;
-    this.recoilAccum = { v: 0, h: 0 };
-    this.sway = new THREE.Vector2();
+    this.recoilPitch = 0; this.recoilYaw = 0;
+    this.kick = 0; this.kickRot = 0;
     this.bobPhase = 0;
-    this.lowered = 0;
-    this.muzzleFlashT = 0;
-    this.scoped = false;
-    this.fireBufferedAt = -1;
-    for (const id of WEAPON_ORDER) { this.ammo[id] = WEAPONS[id].mag; this.reserve[id] = WEAPONS[id].reserve; }
-    Object.values(this.viewmodels).forEach((v) => (v.visible = false));
-    if (this.viewmodels[this.weaponId]) this.viewmodels[this.weaponId].visible = true;
+    this.flashUntil = 0;
+    this.sway = new THREE.Vector2();
+
+    this.flashLight = new THREE.PointLight(0xffcf8a, 0, 9, 2);
+    this.holder.add(this.flashLight);
   }
 
-  switchTo(id) {
-    if (id === this.weaponId) return;
-    if (this.viewmodels[this.weaponId]) this.viewmodels[this.weaponId].visible = false;
-    this.weaponId = id;
-    this.viewmodels[id].visible = true;
-    this.spread = this.weapon.spread.hip;
-    this.reloading = false;
-    this.adsBlend = 0;
-    audio.swap();
+  /** Restore a fresh loadout. Must run whenever the game clock is reset to 0, otherwise
+   *  timers left over from the previous session (nextShot = 45s, say) block firing. */
+  reset() {
+    this.slots.forEach((s, i) => {
+      s.ammo = s.def.mag; s.reserve = s.def.reserve;
+      s.reloading = false; s.reloadEnd = 0;
+      s.nextShot = 0; s.boltUntil = 0;
+      s.spread = s.def.spread.hip;
+      s.group.visible = i === 0;
+    });
+    this.index = 0; this.prevIndex = 1;
+    this.swapUntil = 0; this.flashUntil = 0;
+    this.ads = 0;
+    this.recoilPitch = 0; this.recoilYaw = 0;
+    this.kick = 0; this.kickRot = 0;
+    this.lower = 0;
   }
 
-  next() {
-    const i = WEAPON_ORDER.indexOf(this.weaponId);
-    this.switchTo(WEAPON_ORDER[(i + 1) % WEAPON_ORDER.length]);
+  next(now) { return this.switchTo((this.index + 1) % this.slots.length, now); }
+
+  get cur() { return this.slots[this.index]; }
+  get def() { return this.slots[this.index].def; }
+
+  switchTo(i, now) {
+    if (i === this.index || i < 0 || i >= this.slots.length || now < this.swapUntil) return false;
+    this.prevIndex = this.index;
+    this.cur.group.visible = false;
+    this.cur.reloading = false;
+    this.index = i;
+    this.cur.group.visible = true;
+    this.swapUntil = now + 0.45;
+    this.ads = 0;
+    return true;
   }
+
+  canFire(now, moving) {
+    const w = this.cur;
+    return !w.reloading && now >= w.nextShot && now >= this.swapUntil && now >= w.boltUntil && w.ammo > 0;
+  }
+
+  /** Consume a round. Returns the spread cone half-angle (radians) for this shot. */
+  fire(now, ctx) {
+    const w = this.cur, d = w.def;
+    w.ammo--;
+    w.nextShot = now + 60 / d.rpm;
+    if (d.bolt) w.boltUntil = now + 0.95;
+
+    const s = d.spread;
+    const base = this.ads > 0.85 ? s.ads : s.hip;
+    let cone = base + (ctx.moveSpeed || 0) * s.move * 0.06 + (ctx.airborne ? s.air : 0);
+    cone = Math.min(cone + w.spread * 0, s.max);
+    cone = Math.min(Math.max(cone, 0) + this._bloom(w), s.max);
+    w.spread = Math.min(w.spread + s.bloom, s.max);
+
+    const r = d.recoil;
+    const adsDamp = 1 - this.ads * 0.35;
+    this.recoilPitch += r.v * adsDamp * (0.85 + Math.random() * 0.3);
+    this.recoilYaw += (Math.random() - 0.5) * 2 * r.h * adsDamp;
+    this.kick = r.kick;
+    this.kickRot = r.kick * 2.4;
+    this.flashUntil = now + 0.045;
+    return cone;
+  }
+
+  _bloom(w) { return Math.max(0, w.spread - w.def.spread.hip) * 0.9; }
 
   startReload(now) {
-    if (this.reloading) return false;
-    if (this.currentAmmo >= this.weapon.mag || this.currentReserve <= 0) return false;
-    this.reloading = true;
-    this.reloadEndsAt = now + this.weapon.reload;
-    audio.reloadOut();
+    const w = this.cur;
+    if (w.reloading || w.full || w.reserve <= 0 || now < this.swapUntil) return false;
+    w.reloading = true;
+    w.reloadEnd = now + w.def.reload;
     return true;
   }
 
-  canFire(now, ads) {
-    if (this.reloading) return false;
-    if (now < this.nextShot) return false;
-    if (this.weapon.type === 'bolt' && now < this.boltUntil) return false;
-    if (this.currentAmmo <= 0) return false;
-    return true;
+  finishReload() {
+    const w = this.cur;
+    const need = w.def.mag - w.ammo;
+    const take = Math.min(need, w.reserve);
+    w.ammo += take; w.reserve -= take;
+    w.reloading = false;
   }
 
-  fire(now) {
-    const w = this.weapon;
-    this.ammo[this.weaponId]--;
-    this.nextShot = now + 60 / w.rpm;
-    if (w.type === 'bolt') this.boltUntil = now + 60 / w.rpm;
-    this.recoilAccum.v += w.recoil.v;
-    this.recoilAccum.h += w.recoil.h * (Math.random() > 0.5 ? 1 : -1);
-    this.muzzleFlashT = 0.05;
-    this.spread = Math.min(w.spread.max, this.spread + w.spread.bloom);
-    audio.shot(w.profile);
-    if (this.currentAmmo === 0 && this.reserve[this.weaponId] > 0) {
-      // auto-reload handled by caller via settings.autoReload
-    }
-    return { dmg: w.dmg, headMult: w.headMult, limbMult: w.limbMult, range: w.range, falloff: w.falloff };
-  }
+  update(dt, now, st) {
+    const w = this.cur, d = w.def;
 
-  dryFire() { audio.dryFire(); }
+    if (w.reloading && now >= w.reloadEnd) this.finishReload();
 
-  update(dt, now, ctx) {
-    const w = this.weapon;
-    if (this.reloading && now >= this.reloadEndsAt) {
-      const need = w.mag - this.ammo[this.weaponId];
-      const take = Math.min(need, this.reserve[this.weaponId]);
-      this.ammo[this.weaponId] += take;
-      this.reserve[this.weaponId] -= take;
-      this.reloading = false;
-      audio.reloadIn();
-    }
+    // spread decay
+    w.spread = Math.max(d.spread.hip, w.spread - d.spread.decay * dt * 6);
 
-    const targetAds = ctx.ads ? 1 : 0;
-    this.adsBlend += (targetAds - this.adsBlend) * Math.min(1, dt * 10);
-    this.scoped = w.profile === 'sniper' && this.adsBlend > 0.9;
+    // ADS blend
+    const want = st.wantAds && !st.lowered && !w.reloading && now >= this.swapUntil ? 1 : 0;
+    this.lower += ((st.lowered ? 1 : 0) - this.lower) * Math.min(1, 14 * dt);
+    const rate = dt / Math.max(d.adsTime, 0.01);
+    this.ads += Math.sign(want - this.ads) * Math.min(rate, Math.abs(want - this.ads));
+    this.ads = Math.min(1, Math.max(0, this.ads));
 
-    const targetSpreadBase = ctx.ads ? w.spread.ads : w.spread.hip;
-    let target = targetSpreadBase;
-    if (ctx.moving) target += w.spread.move;
-    if (!ctx.onGround) target += w.spread.air;
-    this.spread += (Math.max(target, this.spread - w.spread.decay * dt) - this.spread) * 0;
-    this.spread = Math.max(target, this.spread - w.spread.decay * dt);
+    // recoil recovery
+    const rec = d.recoil.recover;
+    this.recoilPitch -= this.recoilPitch * Math.min(1, rec * dt);
+    this.recoilYaw -= this.recoilYaw * Math.min(1, rec * dt);
+    this.kick -= this.kick * Math.min(1, 11 * dt);
+    this.kickRot -= this.kickRot * Math.min(1, 10 * dt);
 
-    this.recoilAccum.v *= Math.exp(-dt * w.recoil.recover);
-    this.recoilAccum.h *= Math.exp(-dt * w.recoil.recover);
+    // sway follows look input, damped
+    this.sway.x += (Math.max(-1, Math.min(1, -st.lookYaw * 26)) - this.sway.x) * Math.min(1, 8 * dt);
+    this.sway.y += (Math.max(-1, Math.min(1, -st.lookPitch * 26)) - this.sway.y) * Math.min(1, 8 * dt);
 
-    this.muzzleFlashT = Math.max(0, this.muzzleFlashT - dt);
+    // walk bob
+    if (st.grounded && st.moveSpeed > 0.4) this.bobPhase += dt * (st.sprinting ? 13 : 9);
+    const bobAmt = st.bobScale * (1 - this.ads * 0.85) * Math.min(st.moveSpeed / 6, 1);
+    const bobX = Math.cos(this.bobPhase) * 0.012 * bobAmt;
+    const bobY = Math.abs(Math.sin(this.bobPhase)) * 0.010 * bobAmt;
 
-    const targetLowered = ctx.grenadeLower ? 1 : 0;
-    this.lowered += (targetLowered - this.lowered) * Math.min(1, dt * 8);
+    // hip vs ADS pose
+    const a = this.ads;
+    const hipX = 0.185, hipY = -0.185, hipZ = -0.42;
+    const scoped = d.size.sight === 'scope';
+    // put the sight exactly on the screen centre when fully aimed
+    const adsX = 0.0, adsY = -(d.size.sightY * this.holder.scale.y), adsZ = -0.50;
+    this.holder.position.set(
+      THREE.MathUtils.lerp(hipX, adsX, a) + bobX + this.sway.x * 0.018 * (1 - a * 0.8),
+      THREE.MathUtils.lerp(hipY, adsY, a) + bobY + this.sway.y * 0.014 * (1 - a * 0.8) - st.landDip * 0.05
+        - this.lower * 0.32,
+      THREE.MathUtils.lerp(hipZ, adsZ, a) + this.kick
+    );
+    const sprintTilt = st.sprinting && !st.wantAds ? 1 : 0;
+    this.holder.rotation.set(
+      this.kickRot + this.sway.y * 0.05 * (1 - a) + sprintTilt * 0.22,
+      this.sway.x * 0.06 * (1 - a) + sprintTilt * 0.5,
+      sprintTilt * 0.35 * (1 - a)
+    );
 
-    this._updateViewmodel(dt, ctx);
-  }
+    // muzzle flash
+    const on = now < this.flashUntil;
+    w.flashMesh.material.opacity = on ? 0.9 : 0;
+    w.flashMesh.rotation.z = Math.random() * Math.PI;
+    this.flashLight.intensity = on ? 14 : 0;
+    if (on) this.flashLight.position.copy(w.muzzle.position);
 
-  _updateViewmodel(dt, ctx) {
-    const vm = this.viewmodels[this.weaponId];
-    if (!vm) return;
-    const w = this.weapon;
-    const s = this.holderScale;
-    const adsPos = new THREE.Vector3(0, -w.sightY + 0.065, 0.05);
-    const hipPos = new THREE.Vector3(0.14, -0.14, -0.22);
-    const pos = hipPos.clone().lerp(adsPos, this.adsBlend);
-
-    if (ctx.moving && ctx.onGround) this.bobPhase += dt * (ctx.sprinting ? 14 : 10);
-    const bob = ctx.moving && ctx.onGround ? Math.sin(this.bobPhase) * 0.008 * (1 - this.adsBlend) : 0;
-    const bobX = ctx.moving && ctx.onGround ? Math.cos(this.bobPhase * 0.5) * 0.006 * (1 - this.adsBlend) : 0;
-
-    pos.y += bob - this.lowered * 0.35;
-    pos.x += bobX + this.sway.x;
-    pos.z += this.lowered * 0.15;
-
-    vm.position.copy(pos);
-    vm.scale.setScalar(s);
-    vm.rotation.set(-this.recoilAccum.v * 0.4 + this.sway.y, this.recoilAccum.h * 0.3, this.recoilAccum.h * 0.15);
-  }
-
-  addSway(dx, dy) {
-    this.sway.x = THREE.MathUtils.clamp(this.sway.x - dx * 0.0006, -0.03, 0.03);
-    this.sway.y = THREE.MathUtils.clamp(this.sway.y - dy * 0.0006, -0.03, 0.03);
+    // scoped weapons hide the viewmodel at full ADS (scope overlay takes over)
+    if (scoped) w.group.visible = a < 0.92;
   }
 }
