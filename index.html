@@ -1,123 +1,260 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>BLACKOUT ARENA</title>
 <link rel="stylesheet" href="css/style.css" />
 <script type="importmap">
-{ "imports": { "three": "./vendor/three/build/three.module.js",
-               "three/addons/": "./vendor/three/addons/" } }
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
 </script>
 </head>
 <body>
 
-<div id="boot-watchdog">
-  <div class="boot-title">BLACKOUT ARENA</div>
-  <div class="boot-msg" id="boot-msg">Loading arena…</div>
+<canvas id="view"></canvas>
+
+<!-- ============ IN-GAME HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="crosshair">
+    <div class="ch ch-t"></div><div class="ch ch-b"></div>
+    <div class="ch ch-l"></div><div class="ch ch-r"></div>
+    <div id="ch-dot"></div>
+  </div>
+  <div id="cookring" class="hidden"><span id="cooktext">3.2</span></div>
+  <div id="hitmarker"></div>
+  <div id="scope" class="hidden"><div id="scope-cross"></div></div>
+
+  <div id="dmg-indicators"></div>
+  <div id="danger"></div>
+  <div id="hurt-vignette"></div>
+  <div id="flash"></div>
+
+  <div id="topbar">
+    <div class="team you"><span class="lbl">YOU</span><span id="score-you">0</span></div>
+    <div id="timer">10:00</div>
+    <div class="team them"><span id="score-them">0</span><span class="lbl">HOSTILES</span></div>
+  </div>
+
+  <div id="killfeed"></div>
+  <div id="streak-banner"></div>
+
+  <div id="bottomleft">
+    <div id="healthwrap">
+      <div id="healthbar"><div id="healthfill"></div></div>
+      <div id="healthnum">100</div>
+    </div>
+    <div id="statusline">
+      <span id="stancetag">STAND</span>
+      <span id="motiontag" class="hidden">MOTION</span>
+      <span id="clutchtag" class="hidden">CLUTCH · AIM PAUSED</span>
+    </div>
+  </div>
+
+  <div id="bottomright">
+    <div id="streakbox">
+      <div id="streak-ready"></div>
+      <div id="streak-next"></div>
+    </div>
+    <div id="weaponname">R-91 RANGER</div>
+    <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-sep">/</span><span id="ammo-res">120</span></div>
+    <div id="reloadhint" class="hidden">RELOAD</div>
+    <div id="equiprow">
+      <div id="grenades" title="Frag grenades — PRIME button"><i class="nade"></i><b id="gren-count">2</b></div>
+      <div id="weaponslots"></div>
+    </div>
+    <div id="swaphint">HOLD RELOAD TO SWAP</div>
+  </div>
+
+  <div id="minimapwrap">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="uavtag" class="hidden">UAV</div>
+  </div>
+
+  <div id="perfstat"></div>
 </div>
 
-<div id="view">
-  <canvas id="gl"></canvas>
-
-  <!-- ============================================================ HUD -->
-  <div id="hud" class="hidden">
-    <div id="hud-crosshair"></div>
-    <div id="hud-hitmarker"></div>
-    <div id="hud-scope"><div class="scope-ring"></div><div class="scope-cross"></div></div>
-
-    <div id="hud-bottom-left">
-      <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
-      <div id="hud-health-text">100</div>
-      <div id="hud-stance"></div>
+<!-- ============ MENUS ============ -->
+<div id="overlay">
+  <div id="menu-main" class="panel">
+    <div class="logo">
+      <span class="logo-a">BLACKOUT</span><span class="logo-b">ARENA</span>
+      <div class="tagline">AIMBOT NERF-GUN EDITION</div>
     </div>
-
-    <div id="hud-bottom-right">
-      <div id="hud-weapon-name">R-91 RANGER</div>
-      <div id="hud-ammo-row"><span id="hud-ammo">30</span> / <span id="hud-reserve">180</span></div>
-      <div id="hud-grenade-row">NADE <span id="hud-grenade-count">2/2</span></div>
+    <div class="menucols">
+      <div class="menucol">
+        <button class="btn primary" data-act="play">DEPLOY <small>Team deathmatch vs. hostiles</small></button>
+        <button class="btn" data-act="range">FIRING RANGE <small>Targets, free grenades & airstrikes</small></button>
+        <button class="btn" data-act="gunprep">GUN CHECK <small>Test every component on the gun</small></button>
+        <button class="btn" data-act="calib">AIM TUNING <small>MPU-6500 drift, jitter & filter</small></button>
+        <button class="btn" data-act="settings">SETTINGS <small>Controls, button mapping, video</small></button>
+      </div>
+      <div class="menucol info">
+        <h3>YOUR GUN</h3>
+        <div id="controls-list"></div>
+        <div class="hwnote">
+          <p>Raspberry Pi Pico running <b>AIMBOT_master_v5</b>. The gun is a USB mouse + keyboard,
+          so nothing needs installing. Remap any button under <b>Settings → Controls</b>.</p>
+        </div>
+      </div>
     </div>
-
-    <div id="hud-cook-ring"></div>
-    <div id="hud-incoming"></div>
-    <div id="hud-damage-arrows"></div>
-    <div id="hud-clutch-tag">CLUTCH — AIM PAUSED</div>
-    <div id="hud-streak-box"></div>
-    <div id="hud-killfeed"></div>
-    <div id="hud-fps"></div>
-    <canvas id="hud-minimap" width="120" height="120"></canvas>
-
-    <div id="hud-guncheck-pin"></div>
+    <div class="version">v2.0 · AIMBOT edition · WebGL2 · Windows / macOS / Linux</div>
   </div>
 
-  <!-- ============================================================ click-to-capture -->
-  <div id="capture-overlay" class="hidden">
-    <div class="capture-msg">CLICK TO PLAY</div>
-  </div>
-
-  <!-- ============================================================ MENUS -->
-  <div id="menu-main" class="menu">
-    <h1>BLACKOUT ARENA</h1>
-    <div class="sub">AIMBOT nerf-gun edition</div>
-    <div class="menu-list">
-      <button data-action="start-tdm">DEATHMATCH</button>
-      <button data-action="start-range">FIRING RANGE</button>
-      <button data-action="start-track">TRACKING TEST</button>
-      <button data-action="open-guncheck">GUN CHECK</button>
-      <button data-action="open-aimtuning">AIM TUNING</button>
-      <button data-action="open-settings">SETTINGS</button>
-    </div>
-    <div id="menu-controls-list" class="controls-list"></div>
-  </div>
-
-  <div id="menu-pause" class="menu hidden">
+  <div id="menu-pause" class="panel hidden">
     <h2>PAUSED</h2>
-    <div class="menu-list">
-      <button data-action="resume">RESUME</button>
-      <button data-action="open-settings">SETTINGS</button>
-      <button data-action="quit">QUIT TO MENU</button>
-    </div>
+    <button class="btn primary" data-act="resume">RESUME</button>
+    <button class="btn" data-act="settings">SETTINGS</button>
+    <button class="btn" data-act="restart">RESTART MATCH</button>
+    <button class="btn" data-act="quit">QUIT TO MENU</button>
   </div>
 
-  <div id="menu-settings" class="menu hidden">
+  <div id="menu-settings" class="panel hidden wide">
     <h2>SETTINGS</h2>
     <div class="tabs">
-      <button class="tab-btn" data-tab="controls">CONTROLS</button>
-      <button class="tab-btn" data-tab="aim">AIM-MOTION</button>
-      <button class="tab-btn" data-tab="video">VIDEO</button>
-      <button class="tab-btn" data-tab="gameplay">GAMEPLAY</button>
+      <button class="tab active" data-tab="controls">CONTROLS</button>
+      <button class="tab" data-tab="input">AIM / MOTION</button>
+      <button class="tab" data-tab="video">VIDEO</button>
+      <button class="tab" data-tab="game">GAMEPLAY</button>
     </div>
-    <div id="settings-body" class="settings-body"></div>
-    <div class="menu-list"><button data-action="close-settings">BACK</button></div>
+    <div class="tabbody" id="tab-controls">
+      <p class="sub">Click a binding, then press the gun button (or any key / mouse button) you want.
+        <b>Esc</b> cancels, <b>Backspace</b> clears. The <b>GUN SENDS</b> column is what
+        AIMBOT_master_v5 outputs; a <span class="warn">⚠</span> means the gun no longer triggers that action.</p>
+      <div id="bind-table"></div>
+      <div class="row-btns tight">
+        <button class="btn" data-act="reset-binds">RESET BUTTONS TO GUN DEFAULTS</button>
+      </div>
+      <h4 class="subhead">BUTTON BEHAVIOUR</h4>
+      <div id="controls-opts"></div>
+    </div>
+    <div class="tabbody hidden" id="tab-input"></div>
+    <div class="tabbody hidden" id="tab-video"></div>
+    <div class="tabbody hidden" id="tab-game"></div>
+    <div class="row-btns">
+      <button class="btn" data-act="serial">CONNECT GUN OVER USB SERIAL</button>
+      <button class="btn" data-act="reset-settings">RESET EVERYTHING</button>
+      <button class="btn primary" data-act="back">BACK</button>
+    </div>
+    <div class="serialstatus"></div>
   </div>
 
-  <div id="menu-guncheck" class="menu hidden">
+  <!-- Gun check: intro / results -->
+  <div id="menu-gunprep" class="panel hidden wide">
     <h2>GUN CHECK</h2>
-    <div id="guncheck-tiles" class="guncheck-tiles"></div>
-    <div class="menu-list">
-      <button data-action="guncheck-connect">CONNECT SERIAL</button>
-      <button data-action="close-guncheck">BACK</button>
+    <p class="sub">Tests every component on the AIMBOT gun, the way the game actually receives it.
+      Press <b>START</b>, then work through the tiles: pull every button, push the stick all four
+      ways, swing the gun left/right and up/down. Each tile ticks when it passes.
+      <b>Esc</b> finishes. Your cursor is captured during the test, so stray clicks can't hit menu buttons.</p>
+    <p class="sub"><b>Optional — USB serial:</b> connect to also see raw pin states, gyro rates,
+      joystick position and the <b>potentiometer</b> (it has no key, so this is the only way the game can see it).
+      Close the Arduino Serial Monitor first; only one program can hold the port.</p>
+    <div id="gun-summary"></div>
+    <div class="row-btns">
+      <button class="btn" data-act="serial">CONNECT GUN OVER USB SERIAL</button>
+      <button class="btn primary" data-act="gunstart">START GUN CHECK</button>
+      <button class="btn" data-act="back">BACK</button>
+    </div>
+    <div class="serialstatus"></div>
+  </div>
+
+  <!-- Gun check: live (non-interactive; the cursor is captured) -->
+  <div id="gun-live" class="hidden">
+    <div class="gl-head">
+      <span class="gl-title">GUN CHECK</span>
+      <span id="gl-count">0 / 0 PASSED</span>
+      <span id="gl-serial">SERIAL: NOT CONNECTED</span>
+      <span class="gl-esc">ESC TO FINISH</span>
+    </div>
+    <div id="gl-tiles"></div>
+    <div id="gl-raw" class="hidden">
+      <div class="raw-block">
+        <label>JOYSTICK (raw)</label>
+        <div id="gl-stick"><i></i></div>
+        <small id="gl-stick-v">x 0 · y 0</small>
+      </div>
+      <div class="raw-block">
+        <label>POTENTIOMETER · SENSITIVITY</label>
+        <div class="bar"><i id="gl-pot"></i></div>
+        <small id="gl-pot-v">0% · ×1.00</small>
+      </div>
+      <div class="raw-block">
+        <label>MPU-6500 GYRO (°/s)</label>
+        <div class="gyro"><span>X <b id="gl-gx">0</b></span><span>Y <b id="gl-gy">0</b></span><span>Z <b id="gl-gz">0</b></span></div>
+        <small id="gl-info">—</small>
+      </div>
     </div>
   </div>
 
-  <div id="menu-aimtuning" class="menu hidden">
+  <div id="menu-calib" class="panel hidden wide">
     <h2>AIM TUNING</h2>
-    <canvas id="aimtuning-canvas" width="560" height="220"></canvas>
-    <div id="aimtuning-stats"></div>
-    <div class="menu-list"><button data-action="close-aimtuning">BACK</button></div>
-  </div>
-
-  <div id="menu-endmatch" class="menu hidden">
-    <h2 id="endmatch-title">MATCH OVER</h2>
-    <div id="endmatch-stats"></div>
-    <div class="menu-list">
-      <button data-action="rematch">PLAY AGAIN</button>
-      <button data-action="quit">MAIN MENU</button>
+    <p class="sub">Lay the gun down for the drift test, then run the tracking test. Tune until drift is
+      near zero and jitter is low, without the aim feeling sluggish.</p>
+    <div class="calibgrid">
+      <div>
+        <canvas id="trace" width="520" height="200"></canvas>
+        <div class="tracelegend"><span class="raw">RAW</span><span class="filt">FILTERED</span></div>
+      </div>
+      <div class="calibstats">
+        <div class="stat"><label>DRIFT</label><b id="c-drift">0.00</b><small>deg/sec at rest</small></div>
+        <div class="stat"><label>JITTER</label><b id="c-jitter">0.00</b><small>RMS counts</small></div>
+        <div class="stat"><label>PEAK RATE</label><b id="c-peak">0</b><small>counts/frame</small></div>
+        <div class="stat"><label>INPUT RATE</label><b id="c-hz">0</b><small>reports/sec</small></div>
+      </div>
     </div>
+    <div id="calib-sliders"></div>
+    <div class="row-btns">
+      <button class="btn" data-act="drifttest">RUN 5s DRIFT TEST</button>
+      <button class="btn" data-act="tracktest">TRACKING TEST</button>
+      <button class="btn primary" data-act="back">BACK</button>
+    </div>
+    <div id="calibresult"></div>
   </div>
 
+  <div id="menu-end" class="panel hidden">
+    <h2 id="end-title">VICTORY</h2>
+    <div id="end-stats"></div>
+    <button class="btn primary" data-act="restart">PLAY AGAIN</button>
+    <button class="btn" data-act="quit">MAIN MENU</button>
+  </div>
+
+  <div id="clickcatch" class="hidden"><div class="cc-inner">CLICK TO RESUME<small>pointer will be captured</small></div></div>
 </div>
 
-<script type="module" src="src/main.js"></script>
+<div id="loading"><div class="ldr"></div><span>LOADING ARENA…</span></div>
+
+<script>
+  // Boot watchdog: if the game module throws or never starts, say why instead of spinning forever.
+  (function () {
+    function show(msg) {
+      var el = document.getElementById('loading');
+      if (!el || el.classList.contains('hidden')) return;
+      el.style.flexDirection = 'column';
+      el.style.textAlign = 'center';
+      el.style.padding = '0 24px';
+      el.innerHTML = '<span style="color:#ff4433;letter-spacing:.2em">FAILED TO START</span>' +
+        '<pre style="color:#dfe4e0;letter-spacing:0;white-space:pre-wrap;max-width:900px;font:13px Consolas,monospace;margin:14px 0">' +
+        String(msg).replace(/[<&]/g, function (c) { return c === '<' ? '&lt;' : '&amp;'; }) + '</pre>' +
+        '<span style="color:#dfe4e0;opacity:.6;letter-spacing:.05em;font-size:12px;line-height:1.7">' +
+        'Brave: click the lion icon and turn Shields off for localhost, then reload.<br>' +
+        'Also check Settings &rarr; System &rarr; "Use graphics acceleration when available" is on (needed for WebGL).</span>';
+    }
+    window.addEventListener('error', function (e) {
+      show((e.message || 'Script error') + (e.filename ? '\n' + e.filename + ':' + e.lineno : ''));
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      show(e.reason && (e.reason.stack || e.reason.message) || e.reason);
+    });
+    setTimeout(function () {
+      show('The game did not finish starting after 10 seconds.\nOpen DevTools (F12) → Console for details.');
+    }, 10000);
+  })();
+</script>
+
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
