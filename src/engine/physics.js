@@ -1,149 +1,158 @@
-// Swept AABB movement with step-up, plus box-collider raycasts used for everything that needs
-// "is there a wall here" — bullets, line of sight, aim assist, blast exposure, airstrike targeting.
+// Axis-aligned swept collision. Entities are boxes (radius r, height h) with pos = feet centre.
 import * as THREE from 'three';
 
-// Box3.intersectsBox treats touching faces as intersecting. Without this inset an entity
-// standing exactly on the ground would be "inside" it forever (Bug 2).
-export const EPS = 0.03;
+const tmp = new THREE.Box3();
 
-const _box = new THREE.Box3();
-const _v = new THREE.Vector3();
+// Small inset so a box resting exactly on a surface does not count as intersecting it
+// (Box3.intersectsBox treats touching faces as an intersection).
+const EPS = 0.03;
 
-function entityBox(pos, r, h, out) {
-  out.min.set(pos.x - r + EPS, pos.y + EPS, pos.z - r + EPS);
-  out.max.set(pos.x + r - EPS, pos.y + h - EPS, pos.z + r - EPS);
+function entBox(pos, r, h, out = tmp) {
+  out.min.set(pos.x - r, pos.y + EPS, pos.z - r);
+  out.max.set(pos.x + r, pos.y + h - EPS, pos.z + r);
   return out;
 }
 
-/**
- * Per-axis swept AABB movement with step-up onto low ledges/stairs.
- * pos is mutated in place. vel is the desired velocity for this step (m/s); dt scales it.
- * Returns { onGround, steppedUp }.
- */
-export function moveEntity(pos, vel, dt, colliders, r, h, stepHeight) {
-  let onGround = false;
-
-  // Y axis first so a falling entity can settle before X/Z sweeps see it as grounded.
-  pos.y += vel.y * dt;
-  entityBox(pos, r, h, _box);
-  for (const c of colliders) {
-    if (!_box.intersectsBox(c)) continue;
-    if (vel.y <= 0 && pos.y < c.max.y && pos.y + h * 0.5 > c.max.y - h) {
-      // landing on top
-      pos.y = c.max.y;
-      vel.y = 0;
-      onGround = true;
-    } else if (vel.y > 0) {
-      pos.y = c.min.y - h;
-      vel.y = 0;
-    }
-    entityBox(pos, r, h, _box);
-  }
-
-  for (const axis of ['x', 'z']) {
-    const delta = vel[axis] * dt;
-    if (delta === 0) continue;
-    pos[axis] += delta;
-    entityBox(pos, r, h, _box);
-    for (const c of colliders) {
-      if (!_box.intersectsBox(c)) continue;
-
-      // Step-up: find the HIGHEST intersecting surface, not the first collider found.
-      // Picking the first (often the ground plane) makes stairs unclimbable (Bug 1).
-      let highest = -Infinity;
-      for (const c2 of colliders) {
-        const test = entityBox(pos, r, h, new THREE.Box3());
-        if (test.intersectsBox(c2) && c2.max.y > highest) highest = c2.max.y;
-      }
-      const step = highest - pos.y;
-      if (step > 0 && step <= stepHeight) {
-        pos.y = highest;
-        entityBox(pos, r, h, _box);
-        if (!_box.intersectsBox(c)) continue;
-      }
-
-      // Blocked: undo this axis's movement.
-      pos[axis] -= delta;
-      entityBox(pos, r, h, _box);
-      break;
-    }
-  }
-
-  // Ground check via a thin probe just below the feet.
-  if (!onGround) {
-    _v.copy(pos); _v.y -= 0.05;
-    entityBox(_v, r, h, _box);
-    for (const c of colliders) {
-      if (_box.intersectsBox(c) && Math.abs(c.max.y - pos.y) < 0.06) { onGround = true; break; }
-    }
-  }
-
-  return { onGround };
+function overlapsAny(pos, r, h, colliders) {
+  const b = entBox(pos, r, h);
+  for (const c of colliders) if (c.intersectsBox(b)) return c;
+  return null;
 }
 
-/** Can this entity stand at pos without intersecting a collider? Used for "can I stand up here". */
-export function blocked(pos, r, h, colliders) {
-  entityBox(pos, r, h, _box);
-  for (const c of colliders) if (_box.intersectsBox(c)) return true;
+const _list = [];
+function overlapsAll(pos, r, h, colliders) {
+  const b = entBox(pos, r, h);
+  _list.length = 0;
+  for (const c of colliders) if (c.intersectsBox(b)) _list.push(c);
+  return _list;
+}
+
+/**
+ * Try to resolve a horizontal move that ended up inside geometry.
+ * Returns true if the entity can stay at the new position (possibly stepped up).
+ * The step target is the HIGHEST surface it is intersecting — using any other
+ * collider (the ground plane, say) would make stairs unclimbable.
+ */
+function tryStep(pos, r, h, colliders, stepHeight) {
+  const hits = overlapsAll(pos, r, h, colliders);
+  if (hits.length === 0) return true;
+  let top = -Infinity;
+  for (const c of hits) if (c.max.y > top) top = c.max.y;
+  const rise = top - pos.y;
+  if (rise <= 0 || rise > stepHeight) return false;
+  const prevY = pos.y;
+  pos.y = top + 0.002;
+  if (!overlapsAny(pos, r, h, colliders)) return 'stepped';
+  pos.y = prevY;
   return false;
 }
 
-/** Highest collider top at (x, z), used to place spawns and bot waypoints. */
-export function groundHeight(x, z, colliders, maxY = 50) {
+/**
+ * Move an entity, resolving collisions per axis. Mutates pos and vel.
+ * Returns { grounded, hitWall, stepped }.
+ */
+export function moveEntity(pos, vel, dt, colliders, r, h, stepHeight = 0.9) {
+  let grounded = false, hitWall = false, stepped = false;
+
+  // ---- horizontal X ----
+  if (vel.x !== 0) {
+    const prevX = pos.x;
+    pos.x += vel.x * dt;
+    const ok = tryStep(pos, r, h, colliders, stepHeight);
+    if (ok === 'stepped') { stepped = true; grounded = true; }
+    else if (!ok) { pos.x = prevX; vel.x = 0; hitWall = true; }
+  }
+
+  // ---- horizontal Z ----
+  if (vel.z !== 0) {
+    const prevZ = pos.z;
+    pos.z += vel.z * dt;
+    const ok = tryStep(pos, r, h, colliders, stepHeight);
+    if (ok === 'stepped') { stepped = true; grounded = true; }
+    else if (!ok) { pos.z = prevZ; vel.z = 0; hitWall = true; }
+  }
+
+  // ---- vertical ----
+  pos.y += vel.y * dt;
+  const hits = overlapsAll(pos, r, h, colliders);
+  if (hits.length) {
+    if (vel.y <= 0) {
+      let top = -Infinity;
+      for (const c of hits) if (c.max.y > top) top = c.max.y;
+      pos.y = top;
+      grounded = true;
+    } else {
+      let bottom = Infinity;
+      for (const c of hits) if (c.min.y < bottom) bottom = c.min.y;
+      pos.y = bottom - h - 0.001;
+    }
+    vel.y = 0;
+  }
+
+  // ground probe, so contact is not lost on the frame after landing
+  if (!grounded && vel.y <= 0.001) {
+    if (overlapsAny({ x: pos.x, y: pos.y - 0.06, z: pos.z }, r, h, colliders)) grounded = true;
+  }
+
+  return { grounded, hitWall, stepped };
+}
+
+/** True if an entity box at this position would intersect world geometry. */
+export function blocked(pos, r, h, colliders) {
+  return overlapsAny(pos, r, h, colliders) !== null;
+}
+
+/** Height of the highest surface under a point (for spawn placement). */
+export function groundHeight(x, z, colliders, maxY = 40) {
   let best = 0;
   for (const c of colliders) {
-    if (x >= c.min.x && x <= c.max.x && z >= c.min.z && z <= c.max.z && c.max.y <= maxY) {
-      if (c.max.y > best) best = c.max.y;
+    if (x >= c.min.x && x <= c.max.x && z >= c.min.z && z <= c.max.z) {
+      if (c.max.y <= maxY && c.max.y > best) best = c.max.y;
     }
   }
   return best;
 }
 
-const _o = new THREE.Vector3(), _d = new THREE.Vector3();
-
 /**
- * Slab-method ray vs. all collision boxes. Boxes containing the origin are ignored (so firing
- * from inside your own hitbox-adjacent geometry doesn't self-intersect).
- * Returns { distance, point, normal } or null.
+ * Nearest hit of a ray against the world's collision boxes (slab method).
+ * Far cheaper than raycasting render meshes, and exact for this all-box world.
+ * Boxes that contain the origin are ignored. Returns { distance, point, normal } or null.
  */
-export function rayBoxes(colliders, origin, dir, far = 1000) {
-  _o.copy(origin); _d.copy(dir).normalize();
-  let bestT = far, bestNormal = null;
-  for (const b of colliders) {
-    if (_o.x >= b.min.x && _o.x <= b.max.x && _o.y >= b.min.y && _o.y <= b.max.y &&
-        _o.z >= b.min.z && _o.z <= b.max.z) continue; // origin inside: ignore
-
-    let tmin = -Infinity, tmax = Infinity, normal = null;
-    for (const axis of ['x', 'y', 'z']) {
-      const o = _o[axis], dd = _d[axis], mn = b.min[axis], mx = b.max[axis];
-      if (Math.abs(dd) < 1e-9) {
-        if (o < mn || o > mx) { tmin = Infinity; break; }
+const AX = ['x', 'y', 'z'];
+export function rayBoxes(colliders, o, d, far = Infinity) {
+  let best = far, bestAxis = -1, bestSign = 0;
+  for (let i = 0; i < colliders.length; i++) {
+    const c = colliders[i];
+    let tmin = 0, tmax = best, enterAxis = -1, enterSign = 0, hit = true;
+    for (let a = 0; a < 3; a++) {
+      const k = AX[a];
+      const lo = c.min[k], hi = c.max[k], oa = o[k], da = d[k];
+      if (Math.abs(da) < 1e-9) {
+        if (oa < lo || oa > hi) { hit = false; break; }
         continue;
       }
-      let t1 = (mn - o) / dd, t2 = (mx - o) / dd, sign = -1;
-      if (t1 > t2) { [t1, t2] = [t2, t1]; sign = 1; }
-      if (t1 > tmin) { tmin = t1; normal = { axis, sign }; }
+      let t1 = (lo - oa) / da, t2 = (hi - oa) / da, s = -1;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+      if (t1 > tmin) { tmin = t1; enterAxis = a; enterSign = s; }
       if (t2 < tmax) tmax = t2;
-      if (tmin > tmax) { tmin = Infinity; break; }
+      if (tmin > tmax) { hit = false; break; }
     }
-    if (tmin < bestT && tmin >= 0 && tmin !== Infinity) {
-      bestT = tmin;
-      bestNormal = normal;
-    }
+    if (hit && enterAxis >= 0 && tmin < best) { best = tmin; bestAxis = enterAxis; bestSign = enterSign; }
   }
-  if (bestT >= far) return null;
-  const point = _o.clone().addScaledVector(_d, bestT);
+  if (bestAxis < 0) return null;
   const normal = new THREE.Vector3();
-  if (bestNormal) normal[bestNormal.axis] = bestNormal.sign;
-  return { distance: bestT, point, normal };
+  normal[AX[bestAxis]] = bestSign;
+  return {
+    distance: best,
+    point: new THREE.Vector3(o.x + d.x * best, o.y + d.y * best, o.z + d.z * best),
+    normal,
+  };
 }
 
-/** True if nothing blocks the straight line from a to b (with a small padding inset). */
+/** True if nothing solid lies on the segment a -> b. */
 export function clearLine(colliders, a, b, pad = 0.15) {
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const dist = dir.length();
-  if (dist < 1e-6) return true;
-  dir.normalize();
-  const hit = rayBoxes(colliders, a, dir, dist - pad);
-  return !hit;
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const len = Math.hypot(dx, dy, dz);
+  if (len < pad) return true;
+  return rayBoxes(colliders, a, { x: dx / len, y: dy / len, z: dz / len }, len - pad) === null;
 }
