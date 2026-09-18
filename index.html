@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>BLACKOUT ARENA</title>
+<link rel="stylesheet" href="css/style.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js",
+               "three/addons/": "./vendor/three/addons/" } }
+</script>
+</head>
+<body>
+
+<div id="boot-watchdog">
+  <div class="boot-title">BLACKOUT ARENA</div>
+  <div class="boot-msg" id="boot-msg">Loading arena…</div>
+</div>
+
+<div id="view">
+  <canvas id="gl"></canvas>
+
+  <!-- ============================================================ HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-crosshair"></div>
+    <div id="hud-hitmarker"></div>
+    <div id="hud-scope"><div class="scope-ring"></div><div class="scope-cross"></div></div>
+
+    <div id="hud-bottom-left">
+      <div id="hud-health-bar"><div id="hud-health-fill"></div></div>
+      <div id="hud-health-text">100</div>
+      <div id="hud-stance"></div>
+    </div>
+
+    <div id="hud-bottom-right">
+      <div id="hud-weapon-name">R-91 RANGER</div>
+      <div id="hud-ammo-row"><span id="hud-ammo">30</span> / <span id="hud-reserve">180</span></div>
+      <div id="hud-grenade-row">NADE <span id="hud-grenade-count">2/2</span></div>
+    </div>
+
+    <div id="hud-cook-ring"></div>
+    <div id="hud-incoming"></div>
+    <div id="hud-damage-arrows"></div>
+    <div id="hud-clutch-tag">CLUTCH — AIM PAUSED</div>
+    <div id="hud-streak-box"></div>
+    <div id="hud-killfeed"></div>
+    <div id="hud-fps"></div>
+    <canvas id="hud-minimap" width="120" height="120"></canvas>
+
+    <div id="hud-guncheck-pin"></div>
+  </div>
+
+  <!-- ============================================================ click-to-capture -->
+  <div id="capture-overlay" class="hidden">
+    <div class="capture-msg">CLICK TO PLAY</div>
+  </div>
+
+  <!-- ============================================================ MENUS -->
+  <div id="menu-main" class="menu">
+    <h1>BLACKOUT ARENA</h1>
+    <div class="sub">AIMBOT nerf-gun edition</div>
+    <div class="menu-list">
+      <button data-action="start-tdm">DEATHMATCH</button>
+      <button data-action="start-range">FIRING RANGE</button>
+      <button data-action="start-track">TRACKING TEST</button>
+      <button data-action="open-guncheck">GUN CHECK</button>
+      <button data-action="open-aimtuning">AIM TUNING</button>
+      <button data-action="open-settings">SETTINGS</button>
+    </div>
+    <div id="menu-controls-list" class="controls-list"></div>
+  </div>
+
+  <div id="menu-pause" class="menu hidden">
+    <h2>PAUSED</h2>
+    <div class="menu-list">
+      <button data-action="resume">RESUME</button>
+      <button data-action="open-settings">SETTINGS</button>
+      <button data-action="quit">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <div id="menu-settings" class="menu hidden">
+    <h2>SETTINGS</h2>
+    <div class="tabs">
+      <button class="tab-btn" data-tab="controls">CONTROLS</button>
+      <button class="tab-btn" data-tab="aim">AIM-MOTION</button>
+      <button class="tab-btn" data-tab="video">VIDEO</button>
+      <button class="tab-btn" data-tab="gameplay">GAMEPLAY</button>
+    </div>
+    <div id="settings-body" class="settings-body"></div>
+    <div class="menu-list"><button data-action="close-settings">BACK</button></div>
+  </div>
+
+  <div id="menu-guncheck" class="menu hidden">
+    <h2>GUN CHECK</h2>
+    <div id="guncheck-tiles" class="guncheck-tiles"></div>
+    <div class="menu-list">
+      <button data-action="guncheck-connect">CONNECT SERIAL</button>
+      <button data-action="close-guncheck">BACK</button>
+    </div>
+  </div>
+
+  <div id="menu-aimtuning" class="menu hidden">
+    <h2>AIM TUNING</h2>
+    <canvas id="aimtuning-canvas" width="560" height="220"></canvas>
+    <div id="aimtuning-stats"></div>
+    <div class="menu-list"><button data-action="close-aimtuning">BACK</button></div>
+  </div>
+
+  <div id="menu-endmatch" class="menu hidden">
+    <h2 id="endmatch-title">MATCH OVER</h2>
+    <div id="endmatch-stats"></div>
+    <div class="menu-list">
+      <button data-action="rematch">PLAY AGAIN</button>
+      <button data-action="quit">MAIN MENU</button>
+    </div>
+  </div>
+
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+/* BLACKOUT ARENA — one theme: amber on near-black, green friendly, red hostile. */
+:root {
+  --amber: #ffb02e;
+  --green: #7ee081;
+  --red: #ff4433;
+  --panel: rgba(12, 14, 10, 0.82);
+  --ink: #e9e6d8;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #05060a; overflow: hidden; }
+body { font-family: 'Segoe UI', Arial, sans-serif; color: var(--ink); user-select: none; }
+button, input { font-family: inherit; }
+
+#boot-watchdog {
+  position: fixed; inset: 0; background: #05060a; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.boot-title { color: var(--amber); font-size: 2.4rem; letter-spacing: 0.3em; font-weight: 700; }
+.boot-msg { color: #a8a498; margin-top: 1rem; font-family: monospace; }
+
+#view { position: fixed; inset: 0; }
+#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.hidden { display: none !important; }
+
+/* ---------------------------------------------------------------- HUD */
+#hud { position: absolute; inset: 0; pointer-events: none; font-family: monospace; }
+
+#hud-crosshair {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 16px; height: 16px; border: 2px solid var(--amber); border-radius: 50%;
+  transition: width 0.05s linear, height 0.05s linear; opacity: 0.9;
+}
+#hud-crosshair.hidden { display: none; }
+
+#hud-hitmarker {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg);
+  width: 22px; height: 22px; opacity: 0;
+}
+#hud-hitmarker.show {
+  opacity: 1;
+  background:
+    linear-gradient(var(--ink), var(--ink)) center / 100% 2px no-repeat,
+    linear-gradient(var(--ink), var(--ink)) center / 2px 100% no-repeat;
+}
+#hud-hitmarker.head { background-color: transparent; filter: drop-shadow(0 0 2px var(--red)); }
+#hud-hitmarker.head { }
+#hud-hitmarker.head::after { content: ''; }
+#hud-hitmarker.kill {
+  background:
+    linear-gradient(var(--red), var(--red)) center / 100% 2px no-repeat,
+    linear-gradient(var(--red), var(--red)) center / 2px 100% no-repeat;
+}
+
+#hud-scope {
+  position: absolute; inset: 0; display: none; background: #000;
+  align-items: center; justify-content: center;
+}
+#hud-scope.show { display: flex; }
+#hud-scope::before, #hud-scope::after { content: ''; }
+.scope-ring { width: 92vmin; height: 92vmin; border-radius: 50%; border: 3vmin solid #000; box-shadow: 0 0 0 200vmax #000; }
+.scope-cross {
+  position: absolute; width: 60vmin; height: 60vmin;
+  background:
+    linear-gradient(#111, #111) center / 100% 1px no-repeat,
+    linear-gradient(#111, #111) center / 1px 100% no-repeat;
+}
+
+#hud-bottom-left { position: absolute; left: 24px; bottom: 20px; width: 220px; }
+#hud-health-bar { width: 100%; height: 14px; background: rgba(0,0,0,0.5); border: 1px solid var(--amber); }
+#hud-health-fill { height: 100%; width: 100%; background: var(--green); transition: width 0.15s; }
+#hud-health-fill.low { background: var(--red); }
+#hud-health-text { color: var(--amber); font-size: 1.1rem; margin-top: 2px; }
+#hud-stance { color: #a8a498; font-size: 0.8rem; margin-top: 2px; letter-spacing: 0.1em; }
+
+#hud-bottom-right { position: absolute; right: 24px; bottom: 20px; text-align: right; }
+#hud-weapon-name { color: var(--amber); letter-spacing: 0.15em; font-size: 0.9rem; }
+#hud-ammo-row { font-size: 1.6rem; color: var(--ink); }
+#hud-ammo.empty { color: var(--red); }
+#hud-grenade-row { color: #a8a498; font-size: 0.85rem; }
+
+#hud-cook-ring {
+  position: absolute; right: 40px; bottom: 90px; width: 34px; height: 34px; border-radius: 50%;
+  display: none;
+}
+#hud-cook-ring.show { display: block; }
+
+#hud-incoming { position: absolute; top: 50%; left: 50%; width: 0; height: 0; }
+.incoming-marker {
+  position: absolute; width: 10px; height: 10px; background: var(--red); border-radius: 50%;
+  animation: pulse 0.6s infinite alternate;
+}
+@keyframes pulse { from { opacity: 0.4; } to { opacity: 1; } }
+
+#hud-damage-arrows { position: absolute; top: 50%; left: 50%; width: 0; height: 0; }
+.dmg-arrow {
+  position: absolute; width: 0; height: 0; margin: -140px -6px 0 -6px;
+  border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 14px solid var(--red);
+  opacity: 0.9;
+}
+
+#hud-clutch-tag {
+  position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+  color: var(--amber); letter-spacing: 0.15em; font-size: 0.9rem; display: none;
+  background: var(--panel); padding: 4px 12px; border-top: 2px solid var(--amber);
+}
+#hud-clutch-tag.show { display: block; }
+
+#hud-streak-box {
+  position: absolute; top: 20px; right: 24px; color: var(--green); letter-spacing: 0.1em;
+  background: var(--panel); padding: 6px 14px; border-top: 2px solid var(--amber); display: none;
+}
+#hud-streak-box.show { display: block; }
+
+#hud-killfeed { position: absolute; top: 20px; left: 24px; width: 320px; font-size: 0.85rem; }
+.killfeed-row { background: var(--panel); padding: 3px 10px; margin-bottom: 3px; border-top: 2px solid var(--amber); }
+
+#hud-fps { position: absolute; top: 20px; right: 24px; color: #a8a498; font-size: 0.75rem; }
+#hud-fps.hidden { display: none; }
+
+#hud-minimap { position: absolute; top: 60px; right: 24px; border-radius: 50%; border: 2px solid var(--amber); background: #05060a; }
+
+#hud-guncheck-pin { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); color: var(--green); font-size: 0.7rem; }
+
+#capture-overlay {
+  position: absolute; inset: 0; background: rgba(5,6,10,0.55);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; cursor: pointer;
+}
+.capture-msg { color: var(--amber); font-size: 1.4rem; letter-spacing: 0.2em; background: var(--panel); padding: 12px 24px; border-top: 2px solid var(--amber); }
+
+/* ---------------------------------------------------------------- menus */
+.menu {
+  position: absolute; inset: 0; background: rgba(5,6,10,0.88);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  z-index: 50; font-family: 'Segoe UI', Arial, sans-serif;
+}
+.menu h1 { color: var(--amber); font-size: 3rem; letter-spacing: 0.35em; margin-bottom: 0; font-weight: 700; }
+.menu h2 { color: var(--amber); letter-spacing: 0.25em; margin-bottom: 1.2rem; }
+.menu .sub { color: #a8a498; letter-spacing: 0.2em; margin-bottom: 2rem; font-size: 0.9rem; }
+
+.menu-list { display: flex; flex-direction: column; gap: 10px; width: 280px; }
+.menu-list button, .tab-btn {
+  background: var(--panel); color: var(--ink); border: none; border-top: 2px solid var(--amber);
+  padding: 12px 18px; text-align: left; letter-spacing: 0.12em; cursor: pointer; font-size: 0.95rem;
+}
+.menu-list button:hover, .tab-btn:hover, .tab-btn.active { background: rgba(255,176,46,0.18); color: var(--amber); }
+
+.controls-list { margin-top: 1.5rem; color: #a8a498; font-size: 0.8rem; max-width: 560px; text-align: center; }
+
+.tabs { display: flex; gap: 6px; margin-bottom: 1rem; }
+.settings-body { width: 620px; max-height: 50vh; overflow-y: auto; padding-right: 8px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.08); color: var(--ink); font-size: 0.85rem; }
+.setting-row input[type="range"] { width: 200px; }
+.setting-row select { background: #111; color: var(--ink); border: 1px solid var(--amber); padding: 2px 6px; }
+.setting-row .bind-btn { background: rgba(0,0,0,0.4); border: 1px solid var(--amber); color: var(--amber); padding: 4px 10px; cursor: pointer; min-width: 90px; text-align: center; }
+.setting-row .bind-btn.capturing { background: var(--amber); color: #05060a; }
+
+.guncheck-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; width: 640px; }
+.guncheck-tile { background: var(--panel); border-top: 2px solid #555; padding: 10px; text-align: center; font-size: 0.75rem; letter-spacing: 0.08em; }
+.guncheck-tile.pass { border-top-color: var(--green); color: var(--green); }
+.guncheck-tile .pin-light { width: 8px; height: 8px; border-radius: 50%; background: #333; margin: 4px auto; }
+.guncheck-tile .pin-light.on { background: var(--green); }
+
+#aimtuning-canvas { background: #0a0c08; border: 1px solid var(--amber); }
+#aimtuning-stats { color: #a8a498; font-size: 0.8rem; margin: 10px 0; font-family: monospace; }
+
+#endmatch-stats { color: var(--ink); margin-bottom: 1.5rem; font-family: monospace; }
+
+@media (max-width: 700px) {
+  .settings-body, .guncheck-tiles { width: 92vw; }
+  .guncheck-tiles { grid-template-columns: repeat(2, 1fr); }
+}
