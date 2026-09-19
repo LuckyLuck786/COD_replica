@@ -11,6 +11,12 @@ folder works on Windows, macOS and Linux with nothing to compile.
 
 **Gun setup, firmware and wiring notes: [`hardware/README.md`](hardware/README.md).**
 
+**Pico firmware source lives in [`hardware/`](hardware/)** — the current build is
+[`AIMBOT_master_v11`](hardware/AIMBOT_master_v11/AIMBOT_master_v11.ino) (tilt-compensated aim,
+automatic button polarity, on-Pico One-Euro filtering), with the previous
+[`AIMBOT_master_v5`](hardware/AIMBOT_master_v5/AIMBOT_master_v5.ino) and its ready-to-flash
+`.uf2` kept alongside it.
+
 **Rebuilding this game from scratch: [`BUILD_PROMPT.md`](BUILD_PROMPT.md)** — the complete
 specification (hardware, firmware, every file, every constant, the bugs found, and the tests).
 
@@ -80,6 +86,11 @@ still counts.
 An optional USB-serial link carries raw telemetry (pins, gyro, joystick, potentiometer) for the
 Gun Check. It is diagnostics only and never moves the aim, so input is never counted twice.
 
+⚠ That serial link currently expects the **v5** telemetry format. v11 sends a different line, so
+leave *Connect gun over USB serial* alone while v11 is flashed — see
+[§7.4 of the hardware guide](hardware/README.md#74-v11-serial-telemetry--not-yet-read-by-the-game).
+The gun is a plain USB mouse + keyboard, so the game and the rest of GUN CHECK are unaffected.
+
 ---
 
 ## Performance
@@ -136,7 +147,12 @@ src/game/grenades.js  frag cooking, throwing, bounce physics, arc preview
 src/game/effects.js   tracers, impacts, decals, blood, explosions, smoke
 src/game/hud.js       HUD, killfeed, damage indicators, minimap
 vendor/three/         three.js r160 (vendored, so the game runs fully offline)
-hardware/             AIMBOT_master_v5 firmware (.ino + ready .uf2) and gun guide
+hardware/             Pico firmware source and the gun guide:
+  AIMBOT_master_v11/    current sketch — tilt-compensated aim, auto button polarity,
+                        on-Pico One-Euro filter, optional MPU data-ready interrupt
+  AIMBOT_master_v5/     previous sketch, matching AIMBOT_master_v5.uf2
+  AIMBOT_master_v5.uf2  prebuilt v5 build — drag onto RPI-RP2 with BOOTSEL held
+  README.md             wiring, flashing, tuning, and what changed in v11
 ```
 
 No build step, no package manager, no network access at runtime.

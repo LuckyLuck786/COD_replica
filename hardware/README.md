@@ -8,24 +8,47 @@ works in any other game.
 
 ---
 
+## 0. Which firmware
+
+Two complete sketches live in this folder. Both are the real firmware that was flashed to the
+gun; they are kept side by side so the older, documented build stays reproducible.
+
+| Sketch | Source | Status |
+|---|---|---|
+| **AIMBOT v11.0** | [`AIMBOT_master_v11/AIMBOT_master_v11.ino`](AIMBOT_master_v11/AIMBOT_master_v11.ino) | **Current.** Auto button polarity, tilt-compensated aim, on-Pico One-Euro filter, dt clamp, optional MPU data-ready interrupt. See §7 |
+| AIMBOT v5 | [`AIMBOT_master_v5/AIMBOT_master_v5.ino`](AIMBOT_master_v5/AIMBOT_master_v5.ino) | Previous release. The prebuilt [`AIMBOT_master_v5.uf2`](AIMBOT_master_v5.uf2) is **this** version |
+
+Sections 2–6 below describe the v5 sketch (axis setup, its constants, its serial format).
+**§7 lists everything v11 changes**, including one thing you must know before connecting v11 to
+the game's serial Gun Check.
+
+There is no prebuilt `.uf2` for v11 yet — build it from source in the Arduino IDE.
+
+---
+
 ## 1. Flash the firmware
 
 Wiring is exactly the wiring guide's, so if `WIRING_TEST.ino` passes, you're ready.
 
-**Quick way:** hold BOOTSEL, plug the Pico in, and drag
+**Quick way (v5 only):** hold BOOTSEL, plug the Pico in, and drag
 [`AIMBOT_master_v5.uf2`](AIMBOT_master_v5.uf2) onto the `RPI-RP2` drive. That build uses the
 default axis settings below.
 
-**Arduino IDE (needed once you change any setting):** open
-[`AIMBOT_master_v5/AIMBOT_master_v5.ino`](AIMBOT_master_v5/AIMBOT_master_v5.ino).
+**Arduino IDE (needed for v11, and for v5 once you change any setting):** open either
+[`AIMBOT_master_v11/AIMBOT_master_v11.ino`](AIMBOT_master_v11/AIMBOT_master_v11.ino) (current)
+or [`AIMBOT_master_v5/AIMBOT_master_v5.ino`](AIMBOT_master_v5/AIMBOT_master_v5.ino).
 - Board package: *Raspberry Pi Pico/RP2040* (Earle Philhower). It built clean against 6.1.0.
 - Board: *Raspberry Pi Pico*
 - Tools → **USB Stack: "Pico SDK"** (this gives mouse, keyboard and serial at the same time)
+- Both sketches use only `Wire`, `Mouse` and `Keyboard` — no extra libraries to install.
 
 Keep the gun **still for ~2 seconds after plugging in**. The LED blinks while it measures the
 gyro's resting offset.
 
 ## 2. Set the aim axes — after the sensor is mounted
+
+> **v5 only.** v11 works out the axes from gravity at runtime and prints no axis line — skip to
+> §7 and set `FORWARD_X/Y/Z` instead.
 
 Which gyro axis means "left/right" depends on how the MPU-6500 sits in the gun.
 
@@ -139,7 +162,101 @@ If the drift test reports drift, hold the clutch for 3 s with the gun still.
 The gyro runs at **±1000 °/s**, not the ±250 used in the wiring test. A fast swing of a gun
 easily exceeds 250 °/s, which would clip and make the aim lag behind.
 
-**Serial telemetry format** (for your own tools):
+**Serial telemetry format — v5** (for your own tools):
 `T gx×10 gy×10 gz×10 joyX joyY pot mask sens×100 mpuOk` at 25 Hz, where the mask bits are
 1 trigger · 2 clutch · 4 reload · 8 stick click · 16 prime · 32 aux. There's also an info
 line, `I …`, every 2 s. Both are sent only while a program has the port open.
+
+This is the format `src/engine/input.js` parses. **v11 sends a different line — see §7.4.**
+
+---
+
+## 7. AIMBOT v11 — what changed
+
+Source: [`AIMBOT_master_v11/AIMBOT_master_v11.ino`](AIMBOT_master_v11/AIMBOT_master_v11.ino).
+Built for DSU DevHack 3.0. It keeps the same keys and the same five buttons, so **the game needs
+no rebinding** — everything in §3 and §5 still applies. What changed is how aim is produced.
+
+### 7.1 Mode switches (top of the sketch)
+
+| Switch | Default | Effect |
+|---|---|---|
+| `TELEMETRY` | `true` | Emit the serial line at 50 Hz |
+| `DEBUG_MODE` | `false` | `true` disables all mouse/keyboard output — safe for bench testing |
+| `GYRO_RANGE_500` | `false` | `false` = ±250 °/s, `true` = ±500 °/s |
+| `USE_INT` | `false` | `false` = 250 Hz timer polling. `true` = try the MPU data-ready interrupt |
+
+**Leave `USE_INT` at `false` unless you have actually wired the INT pin.** With it off the
+sketch polls on a timer, which is the known-good behaviour. Turning it on makes the sketch probe
+GP15 at boot and print an honest verdict; if the probe fails it falls back to polling by itself.
+
+### 7.2 Wiring differences from v5
+
+v11 adds one optional pin and states a different supply for the sensor:
+
+| | v5 / wiring guide | v11 header |
+|---|---|---|
+| MPU-6500 `VCC` | 3V3(OUT), pin 36 | **VBUS, pin 40 (5 V)** |
+| Joystick / pot `VCC` | 3V3(OUT), pin 36 | 3V3(OUT), pin 36 |
+| Joystick / pot `GND` | (−) rail | AGND, pin 33 |
+| MPU `INT` | not used | **GP15, pin 20 — optional, leave unconnected if unused** |
+
+> ⚠ **Check your MPU-6500 board before moving its VCC to VBUS.** Only breakouts with an onboard
+> 3.3 V regulator tolerate 5 V. A bare MPU-6500 is a 3.3 V part. If yours ran correctly on 3V3
+> with v5, leave it on 3V3 — v11 does not require the change. I2C stays on GP4/GP5 either way.
+
+`NCS` on the sensor is the SPI chip select and stays unconnected.
+
+### 7.3 Behaviour changes
+
+- **Automatic button polarity.** At boot the sketch samples all six buttons for ~40 ms and takes
+  whatever it sees as "at rest", so a button wired to the opposite rail still works.
+  **Do not hold any button while plugging the gun in.**
+- **Tilt-compensated aim replaces the manual axis setup.** v11 tracks gravity from the
+  accelerometer and projects the gyro onto the true yaw/pitch axes, so the §2 `DEBUG_MODE` axis
+  procedure is no longer needed. Roll the gun and aim stays level. Set `FORWARD_X/Y/Z` to the
+  barrel direction in sensor coordinates (default `1, 0, 0`); `YAW_INVERT` / `PITCH_INVERT`
+  flip a reversed axis.
+- **Filtering moved onto the Pico.** A One-Euro filter runs in the firmware, feeding a
+  sub-pixel accumulator so slow movement is not truncated to zero. The game's own filter still
+  runs on top; if aim feels over-smoothed, lower the in-game Speed Response first.
+- **Continuous drift correction (ZUPT).** While the gun is still the gyro bias is re-learned
+  automatically, so drift no longer builds up over a match.
+- **`dt` is clamped to 1–50 ms.** This is the fix for the v10 bug where a bad timing source made
+  `dt` microscopic and the aim accumulator never advanced — the cursor froze while every button
+  still worked. It cannot recur.
+- **Output watchdog.** In INT mode, if the gyro is clearly moving but no mouse report has gone
+  out for 1.5 s, the sketch reverts to timer polling on its own and says so on serial.
+- **Gyro recalibration is Clutch + Reload held 2 s** (v5: Clutch alone held 3 s).
+- **Clutch + Trigger together taps Space** — a respawn shortcut. Holding the clutch still
+  freezes aim as before, and the trigger does not fire while the clutch is down.
+- **Sprint fires on any full stick push**, not just forward.
+- **Sensitivity** is `sensX`/`sensY` (12.0) scaled by the pot over ×0.2 … ×3.2.
+- The joystick uses one threshold (`DEADZONE` 500) rather than v5's press/release hysteresis.
+
+The default gyro range is **±250 °/s**, not the ±1000 v5 used. A hard swing can exceed that and
+clip. If fast turns feel like they stop short, set `GYRO_RANGE_500` to `true`.
+
+### 7.4 v11 serial telemetry — not yet read by the game
+
+v11 emits a CSV line at 50 Hz:
+
+```
+AIMBOT,trig,clutch,reload,stick,prime,aux,joyX,joyY,pot,yaw,pitch,mouseX,mouseY
+```
+
+Buttons are 0/1, `joyX`/`joyY`/`pot` are raw 12-bit ADC counts, `yaw`/`pitch` are °/s after
+deadband, and `mouseX`/`mouseY` are the counts sent to the host that tick.
+
+> ⚠ **Do not use "Connect gun over USB serial" in GUN CHECK while v11 is flashed.**
+> `src/engine/input.js` keys on the line's first character. `AIMBOT,…` starts with `A`, which is
+> the tag for an *absolute aim* frame, so the parser reads the trigger and clutch states as yaw
+> and pitch in degrees and feeds them into your view. The tiles will be wrong **and the aim will
+> be nudged by button presses.**
+>
+> Everything else is unaffected: the gun is a normal USB mouse + keyboard, so GUN CHECK without
+> the serial link, and the game itself, work exactly as described above. Only the optional
+> serial diagnostics are affected.
+>
+> To get the serial tiles back, either flash v5, or change `sendTelemetry()` in v11 to emit the
+> v5 `T …` line documented at the end of §6.
